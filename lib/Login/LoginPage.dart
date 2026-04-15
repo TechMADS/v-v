@@ -23,18 +23,19 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     super.initState();
     _controller = VideoPlayerController.asset('assets/videos/whirl_bg.mp4')
       ..initialize().then((_) {
+        if (!mounted) return; // guard: widget may already be gone
         setState(() {});
         _controller.play();
 
-        // After 4 seconds show login form
         Timer(Duration(seconds: 3), () {
+          if (!mounted) return;
           setState(() {
             _showLogin = true;
           });
         });
 
-        // After 5 seconds show static image
         Timer(Duration(seconds: 3), () {
+          if (!mounted) return;
           _controller.pause();
           setState(() {
             _showImage = true;
@@ -45,11 +46,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    // ✅ Dispose all YOUR resources first, then super last — never call super twice
     _controller.dispose();
-    super.dispose();
     usernameController.dispose();
     passwordController.dispose();
-    super.dispose();
+    super.dispose(); // always last, always once
   }
 
   Widget _buildLoginForm() {
@@ -57,22 +58,23 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       height: MediaQuery.of(context).size.height * 0.45,
       padding: EdgeInsets.all(25),
       decoration: BoxDecoration(
-        borderRadius:  BorderRadius.vertical(top: Radius.circular(45)),
-        image: DecorationImage(image: AssetImage("assets/Images/login.png",),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(45)),
+        image: DecorationImage(
+          image: AssetImage("assets/Images/login.png"),
           fit: BoxFit.cover,
           opacity: 0.8,
         ),
       ),
-
-      // BoxDecoration(
-      //   color: Colors.white.withOpacity(0.60),
-      //   borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
-      // ),
-
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          Text("User Login", style: TextStyle(fontSize: 35, color: Colors.black, fontWeight: FontWeight.w600),),
+          Text(
+            "User Login",
+            style: TextStyle(
+                fontSize: 35,
+                color: Colors.black,
+                fontWeight: FontWeight.w600),
+          ),
           SizedBox(height: 30),
           TextField(
             controller: usernameController,
@@ -82,7 +84,8 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               prefixIcon: Icon(Icons.person),
               fillColor: Colors.white,
               filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
           SizedBox(height: 25),
@@ -95,10 +98,11 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
               prefixIcon: Icon(Icons.keyboard),
               fillColor: Colors.white,
               filled: true,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12)),
               suffixIcon: IconButton(
-                icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-
+                icon: Icon(
+                    _obscure ? Icons.visibility_off : Icons.visibility),
                 onPressed: () => setState(() => _obscure = !_obscure),
               ),
             ),
@@ -106,17 +110,32 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
           SizedBox(height: 30),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.blue,
-                padding: EdgeInsets.symmetric(horizontal: 70, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))
+              backgroundColor: Colors.blue,
+              padding:
+              EdgeInsets.symmetric(horizontal: 70, vertical: 8),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15)),
             ),
             onPressed: () {
               String userName = usernameController.text.trim();
               String password = passwordController.text;
-              if (password == "12345"){
-                Navigator.pushReplacement(context, MaterialPageRoute(builder: (context) => Homepage(userName: userName,)));};},
-
-            child: Text('Login', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white),),
+              if (password == "12345") {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        Homepage(userName: userName),
+                  ),
+                );
+              }
+            },
+            child: Text(
+              'Login',
+              style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -130,7 +149,6 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
     return Scaffold(
       body: Stack(
         children: [
-          // Smooth transition between video and image
           AnimatedSwitcher(
             duration: Duration(milliseconds: 150),
             switchInCurve: Curves.easeIn,
@@ -155,13 +173,15 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
                 ),
               ),
             )
-                : Container(decoration: BoxDecoration(
-                image: DecorationImage(image: AssetImage("assets/Images/logo_wcm.png"))
-                // image: DecorationImage(image: AssetImage("assets/Images/Splash_logo.png"))
-            ) ,), // Prevent white screen
+                : Container(
+              decoration: BoxDecoration(
+                image: DecorationImage(
+                  image:
+                  AssetImage("assets/Images/logo_wcm.png"),
+                ),
+              ),
+            ),
           ),
-
-          // Animated login form
           AnimatedPositioned(
             duration: Duration(milliseconds: 500),
             curve: Curves.easeOut,
@@ -174,5 +194,4 @@ class _LoginPageState extends State<LoginPage> with TickerProviderStateMixin {
       ),
     );
   }
-
 }

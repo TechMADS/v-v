@@ -10,6 +10,9 @@ import 'package:v_v/Sheets/SoftwareSheet.dart';
 import 'package:v_v/Sheets/Wash_Performance_Sheet.dart';
 import '../Login/LoginPage.dart';
 
+// ─────────────────────────────────────────────
+// DATA MODEL
+// ─────────────────────────────────────────────
 
 class Item {
   final String name;
@@ -17,10 +20,15 @@ class Item {
   Item({required this.name, required this.icon});
 }
 
+// ─────────────────────────────────────────────
+// HOMEPAGE  (was wrongly wrapping MaterialApp)
+// ─────────────────────────────────────────────
+
 class Homepage extends StatelessWidget {
-  Homepage({required this.userName});
-  String userName;
-  final List<Item> items = [
+  final String userName;
+  const Homepage({super.key, required this.userName});
+
+  static final List<Item> items = [
     Item(name: 'Mechanical', icon: Icons.engineering),
     Item(name: 'Software', icon: Icons.code),
     Item(name: 'NVH', icon: Icons.precision_manufacturing_outlined),
@@ -29,107 +37,79 @@ class Homepage extends StatelessWidget {
     Item(name: 'Wash Performance', icon: Icons.local_laundry_service),
   ];
 
-
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Departments',
-      home: HomePage(items: items, userName: userName,),
-      debugShowCheckedModeBanner: false,
-    );
+    // ✅ No MaterialApp here — we're already inside one from main.dart
+    return HomePage(items: items, userName: userName);
   }
 }
+
+// ─────────────────────────────────────────────
+// HOME PAGE (stateful)
+// ─────────────────────────────────────────────
 
 class HomePage extends StatefulWidget {
   final List<Item> items;
   final String userName;
 
-  HomePage({required this.items, required this.userName});
+  const HomePage({super.key, required this.items, required this.userName});
 
   @override
-  State<HomePage> createState() => _HomePageState(userName: userName);
+  State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  _HomePageState({required this.userName});
-  String userName ;
-  int _selectedIndex = 0;
+  // ✅ Access userName via widget.userName — never pass it into State constructor
 
-  void _onNavTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    if (index == 1) {
-      _onSearchIconTapped(); // You must define this function
-    }
-  }
   void _onSearchIconTapped() {
     showModalBottomSheet(
       context: context,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(16),
+      builder: (_) => const Padding(
+        padding: EdgeInsets.all(16),
         child: Text("Search UI here"),
       ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.of(context).size.height;
     double screenWidth = MediaQuery.of(context).size.width;
     double fontSize = screenWidth * 0.05;
+
     return SafeArea(
       child: Scaffold(
-        // drawer: Drawer(
-        //   backgroundColor: Colors.white,
-        //   child:  ListView(
-        //     padding: EdgeInsets.zero,
-        //     children: <Widget>[
-        //       UserAccountsDrawerHeader(accountName: Text("$userName"), accountEmail: Text(''),
-        //         decoration: BoxDecoration(
-        //             gradient: LinearGradient(colors: [c1,c2],                begin: Alignment.topCenter,
-        //               end: Alignment.bottomCenter,)
-        //         ),
-        //         currentAccountPicture: CircleAvatar(
-        //           backgroundColor: Colors.blueGrey,
-        //           child: Text(
-        //             'A',
-        //             style: TextStyle(fontSize: 40.0, color: Colors.white),
-        //
-        //           ),
-        //         ),),
-        //       ListTile(
-        //         leading: Icon(Icons.logout, color: Colors.red),
-        //         title: Text('Logout', style: TextStyle(color: Colors.black)),
-        //         onTap: () { Navigator.push(context, MaterialPageRoute(builder: (context)=> LoginPage()));},
-        //       ),
-        //     ],
-        //   ),
-        // ),
-
         appBar: PreferredSize(
-          preferredSize: Size.fromHeight(60),
+          preferredSize: const Size.fromHeight(60),
           child: AppBar(
-            leading: IconButton(onPressed: (){
-              Navigator.push(context, MaterialPageRoute(builder: (context)=> LoginPage()));
-            }, icon: Icon(Icons.logout, color: Colors.red),),
+            leading: IconButton(
+              onPressed: () {
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (_) => LoginPage()),
+                );
+              },
+              icon: const Icon(Icons.logout, color: Colors.red),
+            ),
             flexibleSpace: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  colors: [c1,c2],
+                  colors: [c1, c2],
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                 ),
-              ),),
-            iconTheme: IconThemeData(color: Colors.white),
+              ),
+            ),
+            iconTheme: const IconThemeData(color: Colors.white),
             backgroundColor: Colors.black,
             elevation: 0,
             centerTitle: true,
-            title: Text("Departments",
-                style: TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.white,)
+            title: const Text(
+              "Departments",
+              style: TextStyle(
+                fontSize: 28,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
             ),
             actions: [
               IconButton(
@@ -137,34 +117,31 @@ class _HomePageState extends State<HomePage> {
                 onPressed: () {
                   Navigator.push(
                     context,
-                    MaterialPageRoute(builder: (_) => const NotificationPage()),
+                    MaterialPageRoute(
+                        builder: (_) => const NotificationPage()),
                   );
                 },
               ),
             ],
-
           ),
         ),
         body: Container(
           height: double.infinity,
-          decoration: BoxDecoration(gradient: LinearGradient(colors: [c1, c2])),
+          decoration:
+          BoxDecoration(gradient: LinearGradient(colors: [c1, c2])),
           child: SingleChildScrollView(
             child: Padding(
               padding: const EdgeInsets.all(25.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 🔹 Carousel Slider
-                  // CarouselScreen(),
-
                   const SizedBox(height: 10),
-
-                  // 🔹 GridView
                   GridView.builder(
                     shrinkWrap: true,
-                    physics: NeverScrollableScrollPhysics(), // Prevent scroll conflict
+                    physics: const NeverScrollableScrollPhysics(),
                     itemCount: widget.items.length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                    const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 25,
                       mainAxisSpacing: 25,
@@ -192,12 +169,15 @@ class _HomePageState extends State<HomePage> {
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(widget.items[index].icon, size: 65, color: Colors.white),
-                                SizedBox(height: 8),
+                                Icon(widget.items[index].icon,
+                                    size: 65, color: Colors.white),
+                                const SizedBox(height: 8),
                                 Text(
                                   widget.items[index].name,
                                   textAlign: TextAlign.center,
-                                  style: TextStyle(fontSize: fontSize, color: Colors.white),
+                                  style: TextStyle(
+                                      fontSize: fontSize,
+                                      color: Colors.white),
                                 ),
                               ],
                             ),
@@ -211,17 +191,21 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
         ),
-
       ),
     );
   }
 }
 
+// ─────────────────────────────────────────────
+// DEPARTMENT LOGIN PAGE
+// ─────────────────────────────────────────────
+
 class DepartmentLoginPage extends StatefulWidget {
   final IconData icon;
   final int departmentIndex;
 
-  DepartmentLoginPage({required this.icon, required this.departmentIndex});
+  const DepartmentLoginPage(
+      {super.key, required this.icon, required this.departmentIndex});
 
   @override
   State<DepartmentLoginPage> createState() => _DepartmentLoginPageState();
@@ -230,39 +214,44 @@ class DepartmentLoginPage extends StatefulWidget {
 class _DepartmentLoginPageState extends State<DepartmentLoginPage> {
   bool _obscure = true;
   final TextEditingController emailController = TextEditingController();
-
   final TextEditingController passwordController = TextEditingController();
 
-  void navigateToDepartment(BuildContext context, int index, String email, String password, bool isAdmin) {
-    // Here you can store email and password for further use if needed
-    print("Email: $email, Password: $password");
+  // ✅ Always dispose controllers
+  @override
+  void dispose() {
+    emailController.dispose();
+    passwordController.dispose();
+    super.dispose();
+  }
 
+  void _navigateToDepartment(
+      BuildContext context, int index, bool isAdmin) {
     Widget destination;
     switch (index) {
       case 0:
-        destination = MechanicalDpt(isAdmin: isAdmin,);
+        destination = MechanicalDpt(isAdmin: isAdmin);
         break;
       case 1:
         destination = SoftwareSheet(isAdmin: isAdmin);
         break;
       case 2:
-        destination = NVH_Sheet(isAdmin: isAdmin,);
+        destination = NVH_Sheet(isAdmin: isAdmin);
         break;
       case 3:
-        destination = ReliabilitySheetPage(isAdmin: isAdmin,);
+        destination = ReliabilitySheetPage(isAdmin: isAdmin);
         break;
       case 4:
-        destination = PackingSheetPage(isAdmin: isAdmin,);
+        destination = PackingSheetPage(isAdmin: isAdmin);
         break;
       case 5:
-        destination = WashSheetPage(isAdmin: isAdmin,);
+        destination = WashSheetPage(isAdmin: isAdmin);
         break;
       default:
         destination = Scaffold(
-          appBar: AppBar(title: Text("Unknown Department")),
-          body: Center(child: Text("No page found for this department.")),
+          appBar: AppBar(title: const Text("Unknown Department")),
+          body: const Center(
+              child: Text("No page found for this department.")),
         );
-        break;
     }
 
     Navigator.pushReplacement(
@@ -274,8 +263,6 @@ class _DepartmentLoginPageState extends State<DepartmentLoginPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ✅ Allow keyboard to push UI up
-      // (You can also remove this line entirely)
       resizeToAvoidBottomInset: true,
       body: Container(
         height: double.maxFinite,
@@ -288,86 +275,107 @@ class _DepartmentLoginPageState extends State<DepartmentLoginPage> {
         ),
         child: SafeArea(
           child: SingleChildScrollView(
-            padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom), // optional
+            padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom),
             child: Center(
               child: Column(
                 children: [
-                  SizedBox(height: MediaQuery.of(context).size.height * 0.15),
+                  SizedBox(
+                      height:
+                      MediaQuery.of(context).size.height * 0.15),
                   Icon(widget.icon, size: 150, color: Colors.white),
-                  SizedBox(height: 30),
+                  const SizedBox(height: 30),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                    padding:
+                    const EdgeInsets.symmetric(horizontal: 24.0),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
+                        const Text(
                           "Log-In",
                           textAlign: TextAlign.center,
-                          style: TextStyle(fontSize: 35, fontWeight: FontWeight.bold, color: Colors.white),
+                          style: TextStyle(
+                              fontSize: 35,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
                         ),
-                        SizedBox(height: 30),
+                        const SizedBox(height: 30),
                         TextField(
                           controller: emailController,
-                          style: TextStyle(color: Colors.white),
+                          style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.2),
                             hintText: 'Email',
-                            hintStyle: TextStyle(color: Colors.white70),
+                            hintStyle:
+                            const TextStyle(color: Colors.white70),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
-                            prefixIcon: Icon(Icons.email, color: Colors.white),
+                            prefixIcon: const Icon(Icons.email,
+                                color: Colors.white),
                           ),
                         ),
-                        SizedBox(height: 20),
+                        const SizedBox(height: 20),
                         TextField(
                           controller: passwordController,
                           obscureText: _obscure,
-                          style: TextStyle(color: Colors.white),
+                          style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: Colors.white.withOpacity(0.2),
                             hintText: 'Password',
-                            hintStyle: TextStyle(color: Colors.white70),
+                            hintStyle:
+                            const TextStyle(color: Colors.white70),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(12),
                               borderSide: BorderSide.none,
                             ),
-                            prefixIcon: Icon(Icons.lock, color: Colors.white),
+                            prefixIcon: const Icon(Icons.lock,
+                                color: Colors.white),
                             suffixIcon: IconButton(
-                              icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                              onPressed: () => setState(() => _obscure = !_obscure),color: Colors.white,
+                              icon: Icon(_obscure
+                                  ? Icons.visibility_off
+                                  : Icons.visibility),
+                              color: Colors.white,
+                              onPressed: () =>
+                                  setState(() => _obscure = !_obscure),
                             ),
                           ),
                         ),
-                        SizedBox(height: 30),
+                        const SizedBox(height: 30),
                         ElevatedButton(
                           onPressed: () {
-                            // ✅ Get values and call function
-                            String email = emailController.text.trim();
-                            String password = passwordController.text;
-                            bool isAdmin = email == "Admin" && password == "12345";
-                            bool isNotAdmin = email == "User" && password == "12345";
-                            if (isAdmin) {
-                              navigateToDepartment(context, widget.departmentIndex, email, password, isAdmin);
-                            }
-                            else if(isNotAdmin){
-                              navigateToDepartment(context, widget.departmentIndex, email, password, isAdmin);
-                            }
+                            final email = emailController.text.trim();
+                            final password = passwordController.text;
+                            final isAdmin =
+                                email == "Admin" && password == "12345";
+                            final isUser =
+                                email == "User" && password == "12345";
 
-                            // navigateToDepartment(context, departmentIndex, email, password, isAdmin);
+                            if (isAdmin || isUser) {
+                              _navigateToDepartment(context,
+                                  widget.departmentIndex, isAdmin);
+                            } else {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content:
+                                    Text('Invalid credentials')),
+                              );
+                            }
                           },
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.white,
                             foregroundColor: Colors.blueAccent,
-                            padding: EdgeInsets.symmetric(vertical: 10),
+                            padding: const EdgeInsets.symmetric(
+                                vertical: 10),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                           ),
-                          child: Text("Login", style: TextStyle(fontSize: 22)),
+                          child: const Text("Login",
+                              style: TextStyle(fontSize: 22)),
                         ),
                       ],
                     ),
@@ -382,10 +390,13 @@ class _DepartmentLoginPageState extends State<DepartmentLoginPage> {
   }
 }
 
-// notification code
+// ─────────────────────────────────────────────
+// NOTIFICATION PAGE
+// ─────────────────────────────────────────────
 
 class NotificationPage extends StatefulWidget {
   const NotificationPage({super.key});
+
   @override
   State<NotificationPage> createState() => _NotificationPageState();
 }
@@ -395,77 +406,87 @@ class _NotificationPageState extends State<NotificationPage> {
     {
       'title': 'Sample Notification',
       'subtitle': 'Sub-informations..........',
-      'image': null
+      'image': null,
     }
   ];
 
-  bool isAdmin = true; // Replace with real user role check
+  bool isAdmin = true;
   File? selectedImage;
 
   void _showAddNotificationDialog() async {
     String title = '';
     String subtitle = '';
+    // Reset before dialog opens
+    selectedImage = null;
 
     await showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Add Notification'),
-        content: SingleChildScrollView(
-          child: Column(
-            children: [
-              TextField(
-                decoration: const InputDecoration(labelText: 'Title'),
-                onChanged: (value) => title = value,
-              ),
-              TextField(
-                decoration: const InputDecoration(labelText: 'Subtitle'),
-                onChanged: (value) => subtitle = value,
-              ),
-              const SizedBox(height: 10),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  final picker = ImagePicker();
-                  final picked = await picker.pickImage(source: ImageSource.gallery);
-                  if (picked != null) {
-                    setState(() => selectedImage = File(picked.path));
-                  }
-                },
-                icon: const Icon(Icons.image),
-                label: const Text("Pick Image"),
-              ),
-              if (selectedImage != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8.0),
-                  child: Image.file(selectedImage!, height: 100),
-                )
-            ],
+      builder: (dialogContext) => StatefulBuilder(
+        // ✅ Use StatefulBuilder so image preview updates inside dialog
+        builder: (dialogContext, setDialogState) => AlertDialog(
+          title: const Text('Add Notification'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  decoration:
+                  const InputDecoration(labelText: 'Title'),
+                  onChanged: (v) => title = v,
+                ),
+                TextField(
+                  decoration:
+                  const InputDecoration(labelText: 'Subtitle'),
+                  onChanged: (v) => subtitle = v,
+                ),
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: () async {
+                    final picker = ImagePicker();
+                    final picked = await picker.pickImage(
+                        source: ImageSource.gallery);
+                    if (picked != null) {
+                      setDialogState(() =>
+                      selectedImage = File(picked.path));
+                    }
+                  },
+                  icon: const Icon(Icons.image),
+                  label: const Text("Pick Image"),
+                ),
+                if (selectedImage != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8.0),
+                    child: Image.file(selectedImage!, height: 100),
+                  ),
+              ],
+            ),
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              selectedImage = null;
-            },
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (title.isNotEmpty) {
-                setState(() {
-                  notifications.insert(0, {
-                    'title': title,
-                    'subtitle': subtitle,
-                    'image': selectedImage,
+          actions: [
+            TextButton(
+              onPressed: () {
+                selectedImage = null;
+                Navigator.pop(dialogContext);
+              },
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                if (title.isNotEmpty) {
+                  setState(() {
+                    notifications.insert(0, {
+                      'title': title,
+                      'subtitle': subtitle,
+                      'image': selectedImage,
+                    });
                   });
-                });
-              }
-              selectedImage = null;
-              Navigator.pop(context);
-            },
-            child: const Text("Post"),
-          ),
-        ],
+                }
+                selectedImage = null;
+                Navigator.pop(dialogContext);
+              },
+              child: const Text("Post"),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -487,8 +508,13 @@ class _NotificationPageState extends State<NotificationPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        title: const Text('Notifications',
-            style: TextStyle(fontSize: 26, color: Colors.white, fontWeight: FontWeight.bold)),
+        title: const Text(
+          'Notifications',
+          style: TextStyle(
+              fontSize: 26,
+              color: Colors.white,
+              fontWeight: FontWeight.bold),
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -497,14 +523,13 @@ class _NotificationPageState extends State<NotificationPage> {
       floatingActionButton: isAdmin
           ? FloatingActionButton(
         backgroundColor: Colors.white,
-        child: const Icon(Icons.add),
         onPressed: _showAddNotificationDialog,
+        child: const Icon(Icons.add),
       )
           : null,
       body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [c1, c2]),
-        ),
+        decoration:
+        const BoxDecoration(gradient: LinearGradient(colors: [c1, c2])),
         child: ListView.builder(
           padding: const EdgeInsets.all(12),
           itemCount: notifications.length,
@@ -517,18 +542,35 @@ class _NotificationPageState extends State<NotificationPage> {
                 border: Border.all(color: Colors.white, width: 1.5),
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                leading: const Icon(Icons.notifications, color: Colors.white),
-                title: Text(item['title'] ?? '',
-                    style: const TextStyle(color: Colors.white)),
-                subtitle: Text(item['subtitle'] ?? '',
-                    style: const TextStyle(color: Colors.white70)),
-                trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white),
-                onTap: () {},
-                // Optional image display
-                isThreeLine: item['image'] != null,
-                subtitleTextStyle: const TextStyle(color: Colors.white70),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    leading: const Icon(Icons.notifications,
+                        color: Colors.white),
+                    title: Text(item['title'] ?? '',
+                        style: const TextStyle(color: Colors.white)),
+                    subtitle: Text(item['subtitle'] ?? '',
+                        style:
+                        const TextStyle(color: Colors.white70)),
+                    trailing: const Icon(Icons.arrow_forward_ios,
+                        size: 14, color: Colors.white),
+                  ),
+                  // ✅ Show image below the tile if it exists
+                  if (item['image'] != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.file(item['image'] as File,
+                            height: 150,
+                            width: double.infinity,
+                            fit: BoxFit.cover),
+                      ),
+                    ),
+                ],
               ),
             );
           },
@@ -537,6 +579,3 @@ class _NotificationPageState extends State<NotificationPage> {
     );
   }
 }
-
-
-

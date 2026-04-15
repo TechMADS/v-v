@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'dart:convert';
 import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:fl_chart/fl_chart.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../Colors/Appbar.dart';
+
+// ─────────────────────────────────────────────
+// TOP-LEVEL ENTRY
+// ─────────────────────────────────────────────
 
 class MechanicalDpt extends StatelessWidget {
   final bool isAdmin;
@@ -15,17 +18,60 @@ class MechanicalDpt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Professional Spreadsheet',
-      home: SpreadsheetHomePage(isAdmin: isAdmin),
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-    );
+    // ✅ No MaterialApp here — already inside one from main.dart
+    return SpreadsheetHomePage(isAdmin: isAdmin);
   }
 }
+
+// ─────────────────────────────────────────────
+// DATA MODEL
+// ─────────────────────────────────────────────
+
+class SpreadsheetFile {
+  final String id;
+  String name;
+  final DateTime createdAt;
+  DateTime lastModified;
+  List<List<String>> data;
+
+  /// key = "row,col"  →  absolute file path of the captured image
+  Map<String, String> cellImages;
+
+  SpreadsheetFile({
+    required this.id,
+    required this.name,
+    required this.createdAt,
+    required this.lastModified,
+    required this.data,
+    Map<String, String>? cellImages,
+  }) : cellImages = cellImages ?? {};
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'name': name,
+    'createdAt': createdAt.toIso8601String(),
+    'lastModified': lastModified.toIso8601String(),
+    'data': data,
+    'cellImages': cellImages,
+  };
+
+  factory SpreadsheetFile.fromJson(Map<String, dynamic> json) =>
+      SpreadsheetFile(
+        id: json['id'],
+        name: json['name'],
+        createdAt: DateTime.parse(json['createdAt']),
+        lastModified: DateTime.parse(json['lastModified']),
+        data: List<List<String>>.from(
+            json['data'].map((row) => List<String>.from(row))),
+        cellImages: json['cellImages'] != null
+            ? Map<String, String>.from(json['cellImages'])
+            : {},
+      );
+}
+
+// ─────────────────────────────────────────────
+// HOME PAGE  (list of sheets)
+// ─────────────────────────────────────────────
 
 class SpreadsheetHomePage extends StatefulWidget {
   final bool isAdmin;
@@ -49,13 +95,11 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
     setState(() => isLoading = true);
     final prefs = await SharedPreferences.getInstance();
     final filesJson = prefs.getString('Mechanical_Sheet');
-
     if (filesJson != null && filesJson.isNotEmpty) {
       final List<dynamic> decoded = jsonDecode(filesJson);
-      savedFiles = decoded.map((json) => SpreadsheetFile.fromJson(json)).toList();
+      savedFiles = decoded.map((j) => SpreadsheetFile.fromJson(j)).toList();
     }
-
-    setState(() => isLoading = false);
+    if (mounted) setState(() => isLoading = false);
   }
 
   Future<void> _saveAllSheets() async {
@@ -64,16 +108,14 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
     await prefs.setString('Mechanical_Sheet', encoded);
   }
 
-  List<List<String>> _getDefaultSheetData() {
-    return [
-      ['S.NO', 'PROJECT', 'MATERIAL', 'FAILURE', 'STATUS'],
-      ['1', 'Project A', 'Steel', '45', 'Active'],
-      ['2', 'Project B', 'Aluminum', '73', 'Active'],
-      ['3', 'Project C', 'Copper', '99', 'Completed'],
-      ['4', 'Project D', 'Steel', '23', 'Pending'],
-      ['5', 'Project E', 'Aluminum', '67', 'Active'],
-    ];
-  }
+  List<List<String>> _getDefaultSheetData() => [
+    ['S.NO', 'PROJECT', 'MATERIAL', 'FAILURE', 'STATUS'],
+    ['1', 'Project A', 'Steel', '45', 'Active'],
+    ['2', 'Project B', 'Aluminum', '73', 'Active'],
+    ['3', 'Project C', 'Copper', '99', 'Completed'],
+    ['4', 'Project D', 'Steel', '23', 'Pending'],
+    ['5', 'Project E', 'Aluminum', '67', 'Active'],
+  ];
 
   Future<void> _createNewSheet() async {
     final fileName = await _showFileNameDialog();
@@ -85,15 +127,13 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
         lastModified: DateTime.now(),
         data: _getDefaultSheetData(),
       );
-
       savedFiles.add(newFile);
       await _saveAllSheets();
-
       if (mounted) {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) => ProfessionalSpreadsheet(
+            builder: (_) => ProfessionalSpreadsheet(
               isAdmin: widget.isAdmin,
               spreadsheetFile: newFile,
               onSave: _saveAllSheets,
@@ -106,7 +146,7 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
 
   Future<String?> _showFileNameDialog() async {
     final controller = TextEditingController();
-    return showDialog<String>(
+    final result = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('New Spreadsheet'),
@@ -120,17 +160,44 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () => Navigator.pop(context, controller.text),
-            child: const Text('Create'),
-          ),
+              onPressed: () => Navigator.pop(context, controller.text),
+              child: const Text('Create')),
         ],
       ),
     );
+    controller.dispose(); // ✅ dispose the local controller
+    return result;
   }
+
+  Future<void> _deleteFile(SpreadsheetFile file) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Spreadsheet'),
+        content: Text('Are you sure you want to delete "${file.name}"?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      setState(() => savedFiles.removeWhere((f) => f.id == file.id));
+      await _saveAllSheets();
+    }
+  }
+
+  String _formatDate(DateTime date) =>
+      '${date.day}/${date.month}/${date.year} '
+          '${date.hour}:${date.minute.toString().padLeft(2, '0')}';
 
   @override
   Widget build(BuildContext context) {
@@ -156,17 +223,16 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.table_chart, size: 80, color: Colors.grey[400]),
+            Icon(Icons.table_chart,
+                size: 80, color: Colors.grey[400]),
             const SizedBox(height: 16),
-            Text(
-              'No spreadsheets yet',
-              style: TextStyle(fontSize: 18, color: Colors.grey[600]),
-            ),
+            Text('No spreadsheets yet',
+                style: TextStyle(
+                    fontSize: 18, color: Colors.grey[600])),
             const SizedBox(height: 8),
-            Text(
-              'Tap + to create your first spreadsheet',
-              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
-            ),
+            Text('Tap + to create your first spreadsheet',
+                style: TextStyle(
+                    fontSize: 14, color: Colors.grey[500])),
           ],
         ),
       )
@@ -186,26 +252,26 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
                   color: Colors.blue[50],
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.table_chart, color: Colors.blue),
+                child: const Icon(Icons.table_chart,
+                    color: Colors.blue),
               ),
-              title: Text(
-                file.name,
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
+              title: Text(file.name,
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold)),
               subtitle: Text(
-                'Last modified: ${_formatDate(file.lastModified)}',
-                style: const TextStyle(fontSize: 12),
-              ),
+                  'Last modified: ${_formatDate(file.lastModified)}',
+                  style: const TextStyle(fontSize: 12)),
               trailing: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.edit, color: Colors.blue),
+                    icon: const Icon(Icons.edit,
+                        color: Colors.blue),
                     onPressed: () {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (context) => ProfessionalSpreadsheet(
+                          builder: (_) => ProfessionalSpreadsheet(
                             isAdmin: widget.isAdmin,
                             spreadsheetFile: file,
                             onSave: _saveAllSheets,
@@ -215,7 +281,8 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
                     },
                   ),
                   IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red),
+                    icon: const Icon(Icons.delete,
+                        color: Colors.red),
                     onPressed: () => _deleteFile(file),
                   ),
                 ],
@@ -226,76 +293,16 @@ class _SpreadsheetHomePageState extends State<SpreadsheetHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _createNewSheet,
-        child: const Icon(Icons.add),
         tooltip: 'New Spreadsheet',
+        child: const Icon(Icons.add),
       ),
     );
   }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
-  }
-
-  Future<void> _deleteFile(SpreadsheetFile file) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Spreadsheet'),
-        content: Text('Are you sure you want to delete "${file.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: TextButton.styleFrom(foregroundColor: Colors.red),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      setState(() {
-        savedFiles.removeWhere((f) => f.id == file.id);
-      });
-      await _saveAllSheets();
-    }
-  }
 }
 
-class SpreadsheetFile {
-  final String id;
-  String name;
-  final DateTime createdAt;
-  DateTime lastModified;
-  List<List<String>> data;
-
-  SpreadsheetFile({
-    required this.id,
-    required this.name,
-    required this.createdAt,
-    required this.lastModified,
-    required this.data,
-  });
-
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'createdAt': createdAt.toIso8601String(),
-    'lastModified': lastModified.toIso8601String(),
-    'data': data,
-  };
-
-  factory SpreadsheetFile.fromJson(Map<String, dynamic> json) => SpreadsheetFile(
-    id: json['id'],
-    name: json['name'],
-    createdAt: DateTime.parse(json['createdAt']),
-    lastModified: DateTime.parse(json['lastModified']),
-    data: List<List<String>>.from(json['data'].map((row) => List<String>.from(row))),
-  );
-}
+// ─────────────────────────────────────────────
+// SPREADSHEET PAGE
+// ─────────────────────────────────────────────
 
 class ProfessionalSpreadsheet extends StatefulWidget {
   final bool isAdmin;
@@ -310,7 +317,8 @@ class ProfessionalSpreadsheet extends StatefulWidget {
   });
 
   @override
-  State<ProfessionalSpreadsheet> createState() => _ProfessionalSpreadsheetState();
+  State<ProfessionalSpreadsheet> createState() =>
+      _ProfessionalSpreadsheetState();
 }
 
 class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
@@ -318,6 +326,8 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   late List<List<List<String>>> _history;
   late List<List<List<String>>> _redoStack;
   final int _maxUndoSteps = 50;
+
+  late Map<String, String> _cellImages;
 
   bool editMode = false;
   bool isSearching = false;
@@ -333,18 +343,22 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   final ScrollController _horizontalScroll = ScrollController();
   final ScrollController _verticalScroll = ScrollController();
 
-  // Zoom controls
   double _zoomLevel = 1.0;
-  final TransformationController _transformationController = TransformationController();
-
+  final TransformationController _transformationController =
+  TransformationController();
   final FocusNode _focusNode = FocusNode();
+
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
     super.initState();
     sheetData = _cloneSheet(widget.spreadsheetFile.data);
+    _cellImages = Map<String, String>.from(widget.spreadsheetFile.cellImages);
     _initHistory();
   }
+
+  // ── history ──────────────────────────────
 
   void _initHistory() {
     _history = [_cloneSheet(sheetData)];
@@ -352,9 +366,7 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   }
 
   void _addToHistory() {
-    if (_history.length >= _maxUndoSteps) {
-      _history.removeAt(0);
-    }
+    if (_history.length >= _maxUndoSteps) _history.removeAt(0);
     _history.add(_cloneSheet(sheetData));
     _redoStack.clear();
   }
@@ -363,9 +375,7 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
     if (_history.length > 1) {
       final current = _history.removeLast();
       _redoStack.add(current);
-      setState(() {
-        sheetData = _cloneSheet(_history.last);
-      });
+      setState(() => sheetData = _cloneSheet(_history.last));
       _autoSave();
     }
   }
@@ -374,9 +384,7 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
     if (_redoStack.isNotEmpty) {
       final redoData = _redoStack.removeLast();
       _addToHistory();
-      setState(() {
-        sheetData = _cloneSheet(redoData);
-      });
+      setState(() => sheetData = _cloneSheet(redoData));
       _autoSave();
     }
   }
@@ -384,43 +392,43 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   bool get canUndo => _history.length > 1;
   bool get canRedo => _redoStack.isNotEmpty;
 
-  List<List<String>> _cloneSheet(List<List<String>> original) {
-    return original.map((row) => List<String>.from(row)).toList();
-  }
+  List<List<String>> _cloneSheet(List<List<String>> src) =>
+      src.map((r) => List<String>.from(r)).toList();
+
+  // ── save ─────────────────────────────────
 
   void _autoSave() {
     widget.spreadsheetFile.data = _cloneSheet(sheetData);
+    widget.spreadsheetFile.cellImages = Map<String, String>.from(_cellImages);
     widget.spreadsheetFile.lastModified = DateTime.now();
     widget.onSave();
   }
 
+  // ── cell operations ───────────────────────
+
   void updateCell(int row, int col, String value) {
-    setState(() {
-      sheetData[row][col] = value;
-    });
+    setState(() => sheetData[row][col] = value);
     _autoSave();
   }
 
   void addRow() {
     setState(() {
-      final newRow = List.generate(sheetData[0].length, (_) => '');
-      sheetData.add(newRow);
+      sheetData.add(List.generate(sheetData[0].length, (_) => ''));
       _addToHistory();
-      _autoSave();
     });
+    _autoSave();
     _showSnackBar('Row added');
   }
 
   void addColumn() {
     setState(() {
-      final newColumnName = 'Column ${_getColumnLabel(sheetData[0].length)}';
-
+      final name = 'Column ${_getColumnLabel(sheetData[0].length)}';
       for (int i = 0; i < sheetData.length; i++) {
-        sheetData[i].add(i == 0 ? newColumnName : '');
+        sheetData[i].add(i == 0 ? name : '');
       }
       _addToHistory();
-      _autoSave();
     });
+    _autoSave();
     _showSnackBar('Column added');
   }
 
@@ -434,13 +442,28 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   }
 
   void deleteRow() {
-    if (selectedRow != null && selectedRow! < sheetData.length && selectedRow! > 0) {
+    if (selectedRow != null &&
+        selectedRow! < sheetData.length &&
+        selectedRow! > 0) {
+      final newImages = <String, String>{};
+      _cellImages.forEach((key, path) {
+        final parts = key.split(',');
+        final r = int.parse(parts[0]);
+        final c = int.parse(parts[1]);
+        if (r == selectedRow) return;
+        if (r > selectedRow!) {
+          newImages['${r - 1},$c'] = path;
+        } else {
+          newImages[key] = path;
+        }
+      });
       setState(() {
         sheetData.removeAt(selectedRow!);
+        _cellImages = newImages;
         selectedRow = null;
         _addToHistory();
-        _autoSave();
       });
+      _autoSave();
       _showSnackBar('Row deleted');
     } else {
       _showSnackBar('Please select a valid row to delete');
@@ -448,15 +471,30 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   }
 
   void deleteColumn() {
-    if (selectedCol != null && selectedCol! < sheetData[0].length && selectedCol! > 0) {
+    if (selectedCol != null &&
+        selectedCol! < sheetData[0].length &&
+        selectedCol! > 0) {
+      final newImages = <String, String>{};
+      _cellImages.forEach((key, path) {
+        final parts = key.split(',');
+        final r = int.parse(parts[0]);
+        final c = int.parse(parts[1]);
+        if (c == selectedCol) return;
+        if (c > selectedCol!) {
+          newImages['$r,${c - 1}'] = path;
+        } else {
+          newImages[key] = path;
+        }
+      });
       setState(() {
         for (var row in sheetData) {
           row.removeAt(selectedCol!);
         }
+        _cellImages = newImages;
         selectedCol = null;
         _addToHistory();
-        _autoSave();
       });
+      _autoSave();
       _showSnackBar('Column deleted');
     } else {
       _showSnackBar('Please select a valid column to delete');
@@ -472,111 +510,125 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
     });
   }
 
-  String getColumnLabel(int index) {
-    String label = '';
-    while (index >= 0) {
-      label = String.fromCharCode((index % 26) + 65) + label;
-      index = (index ~/ 26) - 1;
-    }
-    return label;
+  // ── camera / image ────────────────────────
+
+  String _cellKey(int row, int col) => '$row,$col';
+
+  Future<void> _showImageOptions(int row, int col) async {
+    final key = _cellKey(row, col);
+    final hasImage =
+        _cellImages.containsKey(key) && _cellImages[key]!.isNotEmpty;
+
+    await showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Wrap(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                'Cell Image — Row ${row + 1}, Col ${_getColumnLabel(col)}',
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: Colors.blue),
+              title: const Text('Capture with Camera'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _pickImage(row, col, ImageSource.camera);
+              },
+            ),
+            ListTile(
+              leading:
+              const Icon(Icons.photo_library, color: Colors.green),
+              title: const Text('Choose from Gallery'),
+              onTap: () async {
+                Navigator.pop(ctx);
+                await _pickImage(row, col, ImageSource.gallery);
+              },
+            ),
+            if (hasImage) ...[
+              const Divider(indent: 16, endIndent: 16),
+              ListTile(
+                leading:
+                const Icon(Icons.visibility, color: Colors.orange),
+                title: const Text('View Captured Image'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _viewImage(row, col);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.delete, color: Colors.red),
+                title: const Text('Remove Image'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  setState(() => _cellImages.remove(key));
+                  _autoSave();
+                  _showSnackBar('Image removed');
+                },
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
-  bool isCellInSelection(int row, int col) {
-    if (selectedStart == null || selectedEnd == null) return false;
-    int startRow = selectedStart!.dy.toInt();
-    int endRow = selectedEnd!.dy.toInt();
-    int startCol = selectedStart!.dx.toInt();
-    int endCol = selectedEnd!.dx.toInt();
+  Future<void> _pickImage(int row, int col, ImageSource source) async {
+    try {
+      final XFile? picked = await _picker.pickImage(
+        source: source,
+        imageQuality: 85,
+        maxWidth: 1920,
+        maxHeight: 1920,
+      );
+      if (picked == null) return;
 
-    if (startRow > endRow) {
-      final temp = startRow;
-      startRow = endRow;
-      endRow = temp;
-    }
-    if (startCol > endCol) {
-      final temp = startCol;
-      startCol = endCol;
-      endCol = temp;
-    }
-    return row >= startRow && row <= endRow && col >= startCol && col <= endCol;
-  }
+      final dir = await getApplicationDocumentsDirectory();
+      final fileName =
+          'mech_${widget.spreadsheetFile.id}_${row}_${col}_'
+          '${DateTime.now().millisecondsSinceEpoch}.jpg';
+      final destPath = '${dir.path}/$fileName';
+      await File(picked.path).copy(destPath);
 
-  List<List<String>> getSelectedRangeData() {
-    if (selectedStart == null || selectedEnd == null) return [];
-    int startRow = selectedStart!.dy.toInt();
-    int endRow = selectedEnd!.dy.toInt();
-    int startCol = selectedStart!.dx.toInt();
-    int endCol = selectedEnd!.dx.toInt();
-
-    if (startRow > endRow) {
-      final temp = startRow;
-      startRow = endRow;
-      endRow = temp;
-    }
-    if (startCol > endCol) {
-      final temp = startCol;
-      startCol = endCol;
-      endCol = temp;
-    }
-
-    // Ensure indices are within bounds
-    startRow = startRow.clamp(0, sheetData.length - 1);
-    endRow = endRow.clamp(0, sheetData.length - 1);
-    startCol = startCol.clamp(0, sheetData[0].length - 1);
-    endCol = endCol.clamp(0, sheetData[0].length - 1);
-
-    return sheetData.sublist(startRow, endRow + 1)
-        .map((row) => row.sublist(startCol, endCol + 1))
-        .toList();
-  }
-
-  void copySelection() {
-    final selectedData = getSelectedRangeData();
-    if (selectedData.isEmpty) {
-      _showSnackBar('No range selected');
-      return;
-    }
-
-    final csv = selectedData.map((row) => row.join('\t')).join('\n');
-    Clipboard.setData(ClipboardData(text: csv));
-    _showSnackBar('Copied ${selectedData.length} row(s)');
-  }
-
-  void pasteFromClipboard() async {
-    final clipboardData = await Clipboard.getData('text/plain');
-
-    if (clipboardData == null || clipboardData.text == null) {
-      _showSnackBar('Clipboard is empty');
-      return;
-    }
-
-    final rows = clipboardData.text!.split('\n');
-    if (selectedStart == null || rows.isEmpty) {
-      _showSnackBar('No range selected');
-      return;
-    }
-
-    final startRow = selectedStart!.dy.toInt();
-    final startCol = selectedStart!.dx.toInt();
-
-    if (startRow >= sheetData.length || startCol >= sheetData[0].length) {
-      _showSnackBar('Invalid paste position');
-      return;
-    }
-
-    setState(() {
-      for (int i = 0; i < rows.length && startRow + i < sheetData.length; i++) {
-        final cells = rows[i].split('\t');
-        for (int j = 0; j < cells.length && startCol + j < sheetData[0].length; j++) {
-          sheetData[startRow + i][startCol + j] = cells[j];
-        }
+      if (mounted) {
+        setState(() => _cellImages[_cellKey(row, col)] = destPath);
+        _autoSave();
+        _showSnackBar(
+            'Image saved for cell ${_getColumnLabel(col)}${row + 1}');
       }
-      _addToHistory();
-      _autoSave();
-    });
-
-    _showSnackBar('Pasted successfully');
+    } catch (e) {
+      if (mounted) _showSnackBar('Error: $e');
+    }
   }
+
+  void _viewImage(int row, int col) {
+    final path = _cellImages[_cellKey(row, col)];
+    if (path == null || path.isEmpty) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => _ImageViewPage(
+          imagePath: path,
+          title: 'Image — Row ${row + 1}, Col ${_getColumnLabel(col)}',
+          cellLabel: sheetData[row][col].isNotEmpty
+              ? sheetData[row][col]
+              : '(empty cell)',
+        ),
+      ),
+    );
+  }
+
+  // ── search ────────────────────────────────
 
   void _search(String query) {
     if (query.isEmpty) {
@@ -586,16 +638,14 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
       });
       return;
     }
-
     final results = <Offset>[];
-    for (int row = 0; row < sheetData.length; row++) {
-      for (int col = 0; col < sheetData[row].length; col++) {
-        if (sheetData[row][col].toLowerCase().contains(query.toLowerCase())) {
-          results.add(Offset(col.toDouble(), row.toDouble()));
+    for (int r = 0; r < sheetData.length; r++) {
+      for (int c = 0; c < sheetData[r].length; c++) {
+        if (sheetData[r][c].toLowerCase().contains(query.toLowerCase())) {
+          results.add(Offset(c.toDouble(), r.toDouble()));
         }
       }
     }
-
     setState(() {
       searchResults = results;
       currentSearchIndex = results.isNotEmpty ? 0 : -1;
@@ -608,336 +658,150 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
 
   void _navigateSearch(int direction) {
     if (searchResults.isEmpty) return;
-
-    currentSearchIndex = (currentSearchIndex + direction) % searchResults.length;
-    if (currentSearchIndex < 0) currentSearchIndex = searchResults.length - 1;
-
+    currentSearchIndex =
+        (currentSearchIndex + direction) % searchResults.length;
+    if (currentSearchIndex < 0)
+      currentSearchIndex = searchResults.length - 1;
     setState(() {
       selectedStart = searchResults[currentSearchIndex];
       selectedEnd = searchResults[currentSearchIndex];
-
-      final row = selectedStart!.dy.toInt();
-      final col = selectedStart!.dx.toInt();
-      _scrollToCell(row, col);
+      _scrollToCell(
+          selectedStart!.dy.toInt(), selectedStart!.dx.toInt());
     });
   }
 
   void _scrollToCell(int row, int col) {
-    final double colPosition = col * 100.0 * _zoomLevel;
-    final double rowPosition = row * 40.0 * _zoomLevel;
-
-    _horizontalScroll.animateTo(
-      colPosition,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
-
-    _verticalScroll.animateTo(
-      rowPosition,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    _horizontalScroll.animateTo(col * 100.0 * _zoomLevel,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut);
+    _verticalScroll.animateTo(row * 40.0 * _zoomLevel,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut);
   }
 
-  // void _showGraph() {
-  //   final selectedData = getSelectedRangeData();
-  //   if (selectedData.isEmpty) {
-  //     _showSnackBar('Please select a range first');
-  //     return;
-  //   }
-  //
-  //   if (selectedData.length < 2) {
-  //     _showSnackBar('Please select at least 2 rows of data');
-  //     return;
-  //   }
-  //
-  //   showModalBottomSheet(
-  //     context: context,
-  //     shape: const RoundedRectangleBorder(
-  //       borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-  //     ),
-  //     builder: (context) => SafeArea(
-  //       child: Column(
-  //         mainAxisSize: MainAxisSize.min,
-  //         children: [
-  //           const SizedBox(height: 8),
-  //           Container(
-  //             width: 40,
-  //             height: 4,
-  //             decoration: BoxDecoration(
-  //               color: Colors.grey[300],
-  //               borderRadius: BorderRadius.circular(2),
-  //             ),
-  //           ),
-  //           const SizedBox(height: 16),
-  //           ListTile(
-  //             leading: const Icon(Icons.pie_chart),
-  //             title: const Text('Pie Chart'),
-  //             onTap: () => _showChart('pie', selectedData),
-  //           ),
-  //           const Divider(),
-  //           ListTile(
-  //             leading: const Icon(Icons.bar_chart),
-  //             title: const Text('Bar Chart'),
-  //             onTap: () => _showChart('bar', selectedData),
-  //           ),
-  //           const Divider(),
-  //           ListTile(
-  //             leading: const Icon(Icons.show_chart),
-  //             title: const Text('Line Chart'),
-  //             onTap: () => _showChart('line', selectedData),
-  //           ),
-  //           const SizedBox(height: 8),
-  //         ],
-  //       ),
-  //     ),
-  //   );
-  // }
-  //
-  // void _showChart(String type, List<List<String>> chartData) {
-  //   Navigator.pop(context);
-  //
-  //   try {
-  //     // Extract numeric data from the selected range
-  //     final List<Map<String, dynamic>> chartValues = [];
-  //
-  //     // Assume first row is headers, subsequent rows contain data
-  //     final headers = chartData[0];
-  //
-  //     // For each data row, try to extract numeric values
-  //     for (int i = 1; i < chartData.length && i < chartData.length; i++) {
-  //       final row = chartData[i];
-  //       for (int j = 0; j < row.length && j < headers.length; j++) {
-  //         final value = double.tryParse(row[j]);
-  //         if (value != null) {
-  //           chartValues.add({
-  //             'label': headers[j],
-  //             'value': value,
-  //             'series': row[0], // First column as series name if available
-  //           });
-  //         }
-  //       }
-  //     }
-  //
-  //     if (chartValues.isEmpty) {
-  //       _showSnackBar('No numeric data found in selected range');
-  //       return;
-  //     }
-  //
-  //     // Group by label for charts
-  //     final Map<String, double> dataMap = {};
-  //     for (var item in chartValues) {
-  //       final label = item['label'].toString();
-  //       final value = item['value'] as double;
-  //       if (dataMap.containsKey(label)) {
-  //         dataMap[label] = dataMap[label]! + value;
-  //       } else {
-  //         dataMap[label] = value;
-  //       }
-  //     }
-  //
-  //     final labels = dataMap.keys.toList();
-  //     final values = dataMap.values.toList();
-  //
-  //     if (labels.isEmpty || values.isEmpty) {
-  //       _showSnackBar('No valid data for chart');
-  //       return;
-  //     }
-  //
-  //     showDialog(
-  //       context: context,
-  //       builder: (context) => AlertDialog(
-  //         title: Text('$type Chart'),
-  //         content: SizedBox(
-  //           height: 350,
-  //           width: 350,
-  //           child: _buildChartWidget(type, labels, values),
-  //         ),
-  //         actions: [
-  //           TextButton(
-  //             onPressed: () => Navigator.pop(context),
-  //             child: const Text('Close'),
-  //           ),
-  //         ],
-  //       ),
-  //     );
-  //   } catch (e) {
-  //     _showSnackBar('Error creating chart: $e');
-  //   }
-  // }
-  //
-  // Widget _buildChartWidget(String type, List<String> labels, List<double> values) {
-  //   // Ensure we have valid data
-  //   if (labels.isEmpty || values.isEmpty) {
-  //     return const Center(
-  //       child: Text('No valid data to display'),
-  //     );
-  //   }
-  //
-  //   // Limit to 10 items for better display
-  //   final displayLabels = labels.length > 10 ? labels.sublist(0, 10) : labels;
-  //   final displayValues = values.length > 10 ? values.sublist(0, 10) : values;
-  //
-  //   switch (type) {
-  //     case 'pie':
-  //       return PieChart(
-  //         PieChartData(
-  //           sections: List.generate(
-  //             displayValues.length,
-  //                 (i) => PieChartSectionData(
-  //               value: displayValues[i],
-  //               title: displayLabels[i].length > 15
-  //                   ? '${displayLabels[i].substring(0, 12)}...'
-  //                   : displayLabels[i],
-  //               radius: 80,
-  //               titleStyle: const TextStyle(
-  //                 fontSize: 10,
-  //                 fontWeight: FontWeight.bold,
-  //                 color: Colors.white,
-  //               ),
-  //               color: Colors.primaries[i % Colors.primaries.length],
-  //             ),
-  //           ),
-  //           sectionsSpace: 2,
-  //           centerSpaceRadius: 0,
-  //         ),
-  //       );
-  //
-  //     case 'bar':
-  //       return BarChart(
-  //         BarChartData(
-  //           barGroups: List.generate(
-  //             displayValues.length,
-  //                 (i) => BarChartGroupData(
-  //               x: i,
-  //               barRods: [
-  //                 BarChartRodData(
-  //                   toY: displayValues[i],
-  //                   color: Colors.primaries[i % Colors.primaries.length],
-  //                   width: 20,
-  //                   borderRadius: BorderRadius.circular(4),
-  //                 ),
-  //               ],
-  //             ),
-  //           ),
-  //           titlesData: FlTitlesData(
-  //             bottomTitles: AxisTitles(
-  //               sideTitles: SideTitles(
-  //                 showTitles: true,
-  //                 getTitlesWidget: (value, meta) {
-  //                   final index = value.toInt();
-  //                   if (index >= 0 && index < displayLabels.length) {
-  //                     return Padding(
-  //                       padding: const EdgeInsets.only(top: 8),
-  //                       child: Text(
-  //                         displayLabels[index].length > 10
-  //                             ? '${displayLabels[index].substring(0, 8)}...'
-  //                             : displayLabels[index],
-  //                         style: const TextStyle(fontSize: 10),
-  //                         textAlign: TextAlign.center,
-  //                       ),
-  //                     );
-  //                   }
-  //                   return const Text('');
-  //                 },
-  //                 reservedSize: 40,
-  //               ),
-  //             ),
-  //             leftTitles: const AxisTitles(
-  //               sideTitles: SideTitles(showTitles: true),
-  //             ),
-  //             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-  //             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-  //           ),
-  //           gridData: const FlGridData(show: true),
-  //           borderData: FlBorderData(show: true),
-  //         ),
-  //       );
-  //
-  //     default: // line chart
-  //       return LineChart(
-  //         LineChartData(
-  //           lineBarsData: [
-  //             LineChartBarData(
-  //               spots: List.generate(
-  //                 displayValues.length,
-  //                     (i) => FlSpot(i.toDouble(), displayValues[i]),
-  //               ),
-  //               isCurved: true,
-  //               color: Colors.blue,
-  //               dotData: const FlDotData(show: true),
-  //               belowBarData: BarAreaData(
-  //                 show: true,
-  //                 color: Colors.blue.withOpacity(0.1),
-  //               ),
-  //             ),
-  //           ],
-  //           titlesData: FlTitlesData(
-  //             bottomTitles: AxisTitles(
-  //               sideTitles: SideTitles(
-  //                 showTitles: true,
-  //                 getTitlesWidget: (value, meta) {
-  //                   final index = value.toInt();
-  //                   if (index >= 0 && index < displayLabels.length) {
-  //                     return Padding(
-  //                       padding: const EdgeInsets.only(top: 8),
-  //                       child: Text(
-  //                         displayLabels[index].length > 10
-  //                             ? '${displayLabels[index].substring(0, 8)}...'
-  //                             : displayLabels[index],
-  //                         style: const TextStyle(fontSize: 10),
-  //                         textAlign: TextAlign.center,
-  //                       ),
-  //                     );
-  //                   }
-  //                   return const Text('');
-  //                 },
-  //                 reservedSize: 40,
-  //               ),
-  //             ),
-  //             leftTitles: const AxisTitles(
-  //               sideTitles: SideTitles(showTitles: true),
-  //             ),
-  //             topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-  //             rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-  //           ),
-  //           gridData: const FlGridData(show: true),
-  //           borderData: FlBorderData(show: true),
-  //         ),
-  //       );
-  //   }
-  // }
+  // ── selection ─────────────────────────────
 
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 2),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+  bool isCellInSelection(int row, int col) {
+    if (selectedStart == null || selectedEnd == null) return false;
+    int r0 = selectedStart!.dy.toInt(), r1 = selectedEnd!.dy.toInt();
+    int c0 = selectedStart!.dx.toInt(), c1 = selectedEnd!.dx.toInt();
+    if (r0 > r1) {
+      final t = r0;
+      r0 = r1;
+      r1 = t;
+    }
+    if (c0 > c1) {
+      final t = c0;
+      c0 = c1;
+      c1 = t;
+    }
+    return row >= r0 && row <= r1 && col >= c0 && col <= c1;
   }
 
-  void _zoomIn() {
+  List<List<String>> getSelectedRangeData() {
+    if (selectedStart == null || selectedEnd == null) return [];
+    int r0 = selectedStart!.dy.toInt(), r1 = selectedEnd!.dy.toInt();
+    int c0 = selectedStart!.dx.toInt(), c1 = selectedEnd!.dx.toInt();
+    if (r0 > r1) {
+      final t = r0;
+      r0 = r1;
+      r1 = t;
+    }
+    if (c0 > c1) {
+      final t = c0;
+      c0 = c1;
+      c1 = t;
+    }
+    r0 = r0.clamp(0, sheetData.length - 1);
+    r1 = r1.clamp(0, sheetData.length - 1);
+    c0 = c0.clamp(0, sheetData[0].length - 1);
+    c1 = c1.clamp(0, sheetData[0].length - 1);
+    return sheetData
+        .sublist(r0, r1 + 1)
+        .map((row) => row.sublist(c0, c1 + 1))
+        .toList();
+  }
+
+  void copySelection() {
+    final data = getSelectedRangeData();
+    if (data.isEmpty) {
+      _showSnackBar('No range selected');
+      return;
+    }
+    Clipboard.setData(
+        ClipboardData(text: data.map((r) => r.join('\t')).join('\n')));
+    _showSnackBar('Copied ${data.length} row(s)');
+  }
+
+  Future<void> pasteFromClipboard() async {
+    final clip = await Clipboard.getData('text/plain');
+    if (clip == null || clip.text == null) {
+      _showSnackBar('Clipboard is empty');
+      return;
+    }
+    if (selectedStart == null) {
+      _showSnackBar('No range selected');
+      return;
+    }
+    final rows = clip.text!.split('\n');
+    final sr = selectedStart!.dy.toInt();
+    final sc = selectedStart!.dx.toInt();
     setState(() {
-      _zoomLevel = (_zoomLevel + 0.1).clamp(0.5, 3.0);
-      _transformationController.value = Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
+      for (int i = 0;
+      i < rows.length && sr + i < sheetData.length;
+      i++) {
+        final cells = rows[i].split('\t');
+        for (int j = 0;
+        j < cells.length && sc + j < sheetData[0].length;
+        j++) {
+          sheetData[sr + i][sc + j] = cells[j];
+        }
+      }
+      _addToHistory();
     });
+    _autoSave();
+    _showSnackBar('Pasted successfully');
   }
 
-  void _zoomOut() {
-    setState(() {
-      _zoomLevel = (_zoomLevel - 0.1).clamp(0.5, 3.0);
-      _transformationController.value = Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
-    });
+  // ── zoom ──────────────────────────────────
+
+  void _zoomIn() => setState(() {
+    _zoomLevel = (_zoomLevel + 0.1).clamp(0.5, 3.0);
+    _transformationController.value =
+        Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
+  });
+
+  void _zoomOut() => setState(() {
+    _zoomLevel = (_zoomLevel - 0.1).clamp(0.5, 3.0);
+    _transformationController.value =
+        Matrix4.diagonal3Values(_zoomLevel, _zoomLevel, 1.0);
+  });
+
+  void _resetZoom() => setState(() {
+    _zoomLevel = 1.0;
+    _transformationController.value = Matrix4.identity();
+  });
+
+  // ── misc ──────────────────────────────────
+
+  void _showSnackBar(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg),
+      duration: const Duration(seconds: 2),
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
-  void _resetZoom() {
-    setState(() {
-      _zoomLevel = 1.0;
-      _transformationController.value = Matrix4.identity();
-    });
+  String _getRangeText() {
+    if (selectedStart == null || selectedEnd == null) return '';
+    final s = _getColumnLabel(selectedStart!.dx.toInt()) +
+        (selectedStart!.dy.toInt() + 1).toString();
+    final e = _getColumnLabel(selectedEnd!.dx.toInt()) +
+        (selectedEnd!.dy.toInt() + 1).toString();
+    return s == e ? 'Selected: $s' : 'Range: $s : $e';
   }
+
+  // ── build ─────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -970,46 +834,42 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
             : Text(widget.spreadsheetFile.name),
         backgroundColor: Colors.blue[700],
         foregroundColor: Colors.white,
-        actions: [
-          if (!isSearching) ...[
-            IconButton(
+        actions: isSearching
+            ? [
+          IconButton(
+            icon: const Icon(Icons.close),
+            onPressed: () => setState(() {
+              isSearching = false;
+              searchController.clear();
+              searchResults.clear();
+              currentSearchIndex = -1;
+            }),
+          )
+        ]
+            : [
+          IconButton(
               icon: const Icon(Icons.zoom_in),
               onPressed: _zoomIn,
-              tooltip: 'Zoom In',
-            ),
-            IconButton(
+              tooltip: 'Zoom In'),
+          IconButton(
               icon: const Icon(Icons.zoom_out),
               onPressed: _zoomOut,
-              tooltip: 'Zoom Out',
-            ),
-            IconButton(
+              tooltip: 'Zoom Out'),
+          IconButton(
               icon: const Icon(Icons.center_focus_strong),
               onPressed: _resetZoom,
-              tooltip: 'Reset Zoom',
-            ),
-            IconButton(
+              tooltip: 'Reset Zoom'),
+          IconButton(
               icon: const Icon(Icons.search),
-              onPressed: () => setState(() => isSearching = true),
-            ),
-            if (widget.isAdmin)
-              IconButton(
-                icon: Icon(editMode ? Icons.edit_off : Icons.edit),
-                onPressed: () => setState(() => editMode = !editMode),
-                tooltip: editMode ? 'Exit Edit Mode' : 'Enter Edit Mode',
-              ),
-          ] else ...[
+              onPressed: () => setState(() => isSearching = true)),
+          if (widget.isAdmin)
             IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () {
-                setState(() {
-                  isSearching = false;
-                  searchController.clear();
-                  searchResults.clear();
-                  currentSearchIndex = -1;
-                });
-              },
+              icon: Icon(editMode ? Icons.edit_off : Icons.edit),
+              onPressed: () =>
+                  setState(() => editMode = !editMode),
+              tooltip:
+              editMode ? 'Exit Edit Mode' : 'Enter Edit Mode',
             ),
-          ],
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(50),
@@ -1021,27 +881,34 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
               child: Row(
                 children: [
                   if (widget.isAdmin && editMode) ...[
-                    _buildToolbarButton(Icons.add_box, 'Add Row', addRow),
-                    _buildToolbarButton(Icons.view_column, 'Add Column', addColumn),
-                    _buildToolbarButton(Icons.delete_sweep, 'Delete Row', deleteRow,
-                        enabled: selectedRow != null && selectedRow! > 0),
-                    _buildToolbarButton(Icons.delete, 'Delete Column', deleteColumn,
-                        enabled: selectedCol != null && selectedCol! > 0),
-                    _buildToolbarButton(Icons.undo, 'Undo', undo, enabled: canUndo),
-                    _buildToolbarButton(Icons.redo, 'Redo', redo, enabled: canRedo),
+                    _toolbarBtn(Icons.add_box, 'Add Row', addRow),
+                    _toolbarBtn(
+                        Icons.view_column, 'Add Col', addColumn),
+                    _toolbarBtn(Icons.delete_sweep, 'Del Row', deleteRow,
+                        enabled:
+                        selectedRow != null && selectedRow! > 0),
+                    _toolbarBtn(Icons.delete, 'Del Col', deleteColumn,
+                        enabled:
+                        selectedCol != null && selectedCol! > 0),
+                    _toolbarBtn(Icons.undo, 'Undo', undo,
+                        enabled: canUndo),
+                    _toolbarBtn(Icons.redo, 'Redo', redo,
+                        enabled: canRedo),
                     const VerticalDivider(color: Colors.white54),
                   ],
-                  _buildToolbarButton(Icons.content_copy, 'Copy', copySelection),
-                  _buildToolbarButton(Icons.content_paste, 'Paste', pasteFromClipboard),
-                  // _buildToolbarButton(Icons.bar_chart, 'Chart', _showGraph),
-                  _buildToolbarButton(Icons.clear_all, 'Clear Selection', clearSelection),
+                  _toolbarBtn(
+                      Icons.content_copy, 'Copy', copySelection),
+                  _toolbarBtn(Icons.content_paste, 'Paste',
+                      pasteFromClipboard),
+                  _toolbarBtn(
+                      Icons.clear_all, 'Clear', clearSelection),
                   if (selectedStart != null && selectedEnd != null)
                     Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        _getRangeText(),
-                        style: const TextStyle(color: Colors.white, fontSize: 12),
-                      ),
+                      padding:
+                      const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(_getRangeText(),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12)),
                     ),
                 ],
               ),
@@ -1060,7 +927,6 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
             controller: _verticalScroll,
             child: SingleChildScrollView(
               controller: _verticalScroll,
-              scrollDirection: Axis.vertical,
               child: Scrollbar(
                 controller: _horizontalScroll,
                 child: SingleChildScrollView(
@@ -1080,21 +946,23 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
           FloatingActionButton(
             heroTag: 'prev',
             mini: true,
-            child: const Icon(Icons.arrow_upward),
             onPressed: () => _navigateSearch(-1),
+            child: const Icon(Icons.arrow_upward),
           ),
           const SizedBox(height: 8),
           FloatingActionButton(
             heroTag: 'next',
             mini: true,
-            child: const Icon(Icons.arrow_downward),
             onPressed: () => _navigateSearch(1),
+            child: const Icon(Icons.arrow_downward),
           ),
         ],
       )
           : null,
     );
   }
+
+  // ── table builder ─────────────────────────
 
   Widget _buildTable(int rows, int columns) {
     return Container(
@@ -1105,151 +973,175 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header row with column letters
           Row(
             children: [
-              // Top-left corner cell
-              Container(
-                width: 60,
-                height: 40,
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey[400]!),
-                  color: Colors.grey[200],
-                ),
-                child: const Center(
-                  child: Text(''),
-                ),
-              ),
-              // Column headers
-              ...List.generate(columns, (col) {
-                return GestureDetector(
-                  onTap: () => setState(() {
-                    selectedCol = col;
-                    selectedStart = Offset(col.toDouble(), 0);
-                    selectedEnd = Offset(col.toDouble(), rows - 1);
-                  }),
-                  child: Container(
-                    width: 100,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[400]!),
-                      color: selectedCol == col ? Colors.blue[100] : Colors.grey[200],
-                    ),
-                    child: Center(
-                      child: Text(
-                        getColumnLabel(col),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                );
-              }),
+              _cornerCell(),
+              ...List.generate(columns, (col) => _columnHeader(col, rows)),
             ],
           ),
-          // Data rows
-          ...List.generate(rows, (row) {
-            return Row(
-              children: [
-                // Row header with row number
-                GestureDetector(
-                  onTap: () => setState(() {
-                    selectedRow = row;
-                    selectedStart = Offset(0, row.toDouble());
-                    selectedEnd = Offset(columns - 1, row.toDouble());
-                  }),
-                  child: Container(
-                    width: 60,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey[400]!),
-                      color: selectedRow == row ? Colors.blue[100] : Colors.grey[200],
-                    ),
-                    child: Center(
-                      child: Text(
-                        (row + 1).toString(),
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                  ),
-                ),
-                // Data cells
-                ...List.generate(columns, (col) {
-                  final isSelected = isCellInSelection(row, col);
-                  final isSearchMatch = searchResults.contains(Offset(col.toDouble(), row.toDouble()));
-                  final isCurrentMatch = currentSearchIndex != -1 &&
-                      searchResults[currentSearchIndex] == Offset(col.toDouble(), row.toDouble());
-
-                  return GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        if (selectedStart == null) {
-                          selectedStart = Offset(col.toDouble(), row.toDouble());
-                          selectedEnd = Offset(col.toDouble(), row.toDouble());
-                        } else {
-                          selectedEnd = Offset(col.toDouble(), row.toDouble());
-                        }
-                      });
-                    },
-                    child: Container(
-                      width: 100,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey[400]!),
-                        color: isSelected
-                            ? Colors.blue.withOpacity(0.2)
-                            : isCurrentMatch
-                            ? Colors.yellow
-                            : isSearchMatch
-                            ? Colors.yellow.withOpacity(0.5)
-                            : Colors.white,
-                      ),
-                      child: editMode && widget.isAdmin
-                          ? TextFormField(
-                        initialValue: sheetData[row][col],
-                        textAlign: TextAlign.center,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 8),
-                        ),
-                        onChanged: (value) => updateCell(row, col, value),
-                      )
-                          : Center(
-                        child: Text(
-                          sheetData[row][col],
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            );
-          }),
+          ...List.generate(rows, (row) => _buildRow(row, columns)),
         ],
       ),
     );
   }
 
-  Widget _buildToolbarButton(IconData icon, String tooltip, VoidCallback onPressed, {bool enabled = true}) {
+  Widget _cornerCell() => Container(
+    width: 60,
+    height: 40,
+    decoration: BoxDecoration(
+      border: Border.all(color: Colors.grey[400]!),
+      color: Colors.grey[200],
+    ),
+  );
+
+  Widget _columnHeader(int col, int totalRows) => GestureDetector(
+    onTap: () => setState(() {
+      selectedCol = col;
+      selectedStart = Offset(col.toDouble(), 0);
+      selectedEnd = Offset(col.toDouble(), totalRows - 1);
+    }),
+    child: Container(
+      width: 100,
+      height: 40,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey[400]!),
+        color:
+        selectedCol == col ? Colors.blue[100] : Colors.grey[200],
+      ),
+      child: Center(
+        child: Text(_getColumnLabel(col),
+            style: const TextStyle(fontWeight: FontWeight.bold)),
+      ),
+    ),
+  );
+
+  Widget _buildRow(int row, int columns) {
+    return Row(
+      children: [
+        GestureDetector(
+          onTap: () => setState(() {
+            selectedRow = row;
+            selectedStart = Offset(0, row.toDouble());
+            selectedEnd = Offset(columns - 1, row.toDouble());
+          }),
+          child: Container(
+            width: 60,
+            height: 50,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey[400]!),
+              color: selectedRow == row
+                  ? Colors.blue[100]
+                  : Colors.grey[200],
+            ),
+            child: Center(
+              child: Text('${row + 1}',
+                  style:
+                  const TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ),
+        ),
+        ...List.generate(columns, (col) => _buildCell(row, col)),
+      ],
+    );
+  }
+
+  Widget _buildCell(int row, int col) {
+    final isSelected = isCellInSelection(row, col);
+    final key = _cellKey(row, col);
+    final hasImage =
+        _cellImages.containsKey(key) && _cellImages[key]!.isNotEmpty;
+    final isSearchMatch =
+    searchResults.contains(Offset(col.toDouble(), row.toDouble()));
+    final isCurrentMatch = currentSearchIndex != -1 &&
+        searchResults[currentSearchIndex] ==
+            Offset(col.toDouble(), row.toDouble());
+
+    return GestureDetector(
+      onTap: () {
+        setState(() {
+          if (selectedStart == null) {
+            selectedStart = Offset(col.toDouble(), row.toDouble());
+            selectedEnd = Offset(col.toDouble(), row.toDouble());
+          } else {
+            selectedEnd = Offset(col.toDouble(), row.toDouble());
+          }
+        });
+      },
+      onLongPress: () => _showImageOptions(row, col),
+      child: Container(
+        width: 100,
+        height: 50,
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey[400]!),
+          color: isSelected
+              ? Colors.blue.withOpacity(0.2)
+              : isCurrentMatch
+              ? Colors.yellow
+              : isSearchMatch
+              ? Colors.yellow.withOpacity(0.5)
+              : Colors.white,
+        ),
+        child: Stack(
+          children: [
+            Center(
+              child: editMode && widget.isAdmin
+                  ? TextFormField(
+                initialValue: sheetData[row][col],
+                textAlign: TextAlign.center,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: InputBorder.none,
+                  contentPadding:
+                  EdgeInsets.symmetric(horizontal: 8),
+                ),
+                onChanged: (v) => updateCell(row, col, v),
+              )
+                  : Text(
+                sheetData[row][col],
+                style: const TextStyle(fontSize: 13),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (hasImage)
+              Positioned(
+                top: 2,
+                right: 2,
+                child: GestureDetector(
+                  onTap: () => _viewImage(row, col),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.blue[700],
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Icon(Icons.camera_alt,
+                        size: 12, color: Colors.white),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _toolbarBtn(
+      IconData icon,
+      String tooltip,
+      VoidCallback onPressed, {
+        bool enabled = true,
+      }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Tooltip(
         message: tooltip,
         child: IconButton(
           icon: Icon(icon, size: 20),
-          color: enabled ? Colors.white : Colors.white54,
+          color: enabled ? Colors.white : Colors.white38,
           onPressed: enabled ? onPressed : null,
         ),
       ),
     );
-  }
-
-  String _getRangeText() {
-    if (selectedStart == null || selectedEnd == null) return '';
-    final startLabel = getColumnLabel(selectedStart!.dx.toInt()) + (selectedStart!.dy.toInt() + 1).toString();
-    final endLabel = getColumnLabel(selectedEnd!.dx.toInt()) + (selectedEnd!.dy.toInt() + 1).toString();
-    return startLabel == endLabel ? 'Selected: $startLabel' : 'Range: $startLabel : $endLabel';
   }
 
   @override
@@ -1263,714 +1155,74 @@ class _ProfessionalSpreadsheetState extends State<ProfessionalSpreadsheet> {
   }
 }
 
-// import 'package:flutter/material.dart';
-// import 'dart:convert';
-// import 'dart:io';
-// import 'package:path_provider/path_provider.dart';
-// import 'package:fl_chart/fl_chart.dart';
-// import 'package:permission_handler/permission_handler.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:vector_math/vector_math_64.dart' as vector;
-//
-//
-//
-//
-// class MechanicalDpt extends StatelessWidget {
-//   final bool isAdmin;
-//   MechanicalDpt({required this.isAdmin});
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return MaterialApp(
-//       title: 'pro',
-//       home: MechanicalDptSheet( isAdmin: isAdmin),
-//       debugShowCheckedModeBanner: false,
-//     );
-//   }
-// }
-//
-// class MechanicalDptSheet extends StatefulWidget {
-//   final bool isAdmin;
-//   bool isclicked = false;
-//
-//   MechanicalDptSheet({super.key, required this.isAdmin});
-//
-//   @override
-//   State<MechanicalDptSheet> createState() => _MechanicalDptSheetState();
-// }
-//
-// class _MechanicalDptSheetState extends State<MechanicalDptSheet> {
-//   List<List<String>> sheetData = [];
-//   final String sheetKey = 'Mechanical_Sheet';
-//   bool editMode = false;
-//   bool isclicked = false;
-//   OverlayEntry? entry;
-//   Offset offset = Offset(20, 40);
-//   int? selectedRow;
-//   int? selectedCol;
-//   Offset? selectedStart;
-//   Offset? selectedEnd;
-//   final TextEditingController searchController = TextEditingController();
-//   List<Offset> searchResults = [];
-//   int currentSearchIndex = -1;
-//
-//   // Zoom variables
-//   // double _scale = 1.0;
-//   vector.Matrix4 _matrix = vector.Matrix4.identity();
-//
-//   // Undo/Redo implementation
-//   final List<List<List<String>>> _history = [];
-//   final List<List<List<String>>> _redoStack = [];
-//   final int _maxUndoSteps = 100;
-//
-//   @override
-//   void initState() {
-//     super.initState();
-//     _loadSavedSheet();
-//   }
-//
-//   void _addToHistory(List<List<String>> data) {
-//     if (_history.length >= _maxUndoSteps) {
-//       _history.removeAt(0);
-//     }
-//     _history.add(_cloneSheet(data));
-//     _redoStack.clear();
-//   }
-//
-//   void undo() {
-//     if (_history.length > 1) {
-//       final current = _history.removeLast();
-//       _redoStack.add(current);
-//       setState(() {
-//         sheetData = _cloneSheet(_history.last);
-//       });
-//     }
-//   }
-//
-//   void redo() {
-//     if (_redoStack.isNotEmpty) {
-//       final redoData = _redoStack.removeLast();
-//       _addToHistory(redoData);
-//       setState(() {
-//         sheetData = _cloneSheet(redoData);
-//       });
-//     }
-//   }
-//
-//   bool get canUndo => _history.length > 1;
-//   bool get canRedo => _redoStack.isNotEmpty;
-//
-//   Future<void> _loadSavedSheet() async {
-//     final prefs = await SharedPreferences.getInstance();
-//     final savedData = prefs.getString(sheetKey);
-//     if (savedData != null) {
-//       final List<dynamic> decoded = jsonDecode(savedData);
-//       final data = decoded.map<List<String>>((row) => List<String>.from(row)).toList();
-//       setState(() {
-//         sheetData = data;
-//         _addToHistory(_cloneSheet(data));
-//       });
-//     } else {
-//       sheetData = [
-//         ['S.NO', 'PROJECT', 'MATERIAL','FAILURE'],
-//         ['A', '56', '45', '65'],
-//         ['B', '56', '73', '99'],
-//       ];
-//       _addToHistory(_cloneSheet(sheetData));
-//       setState(() {});
-//     }
-//   }
-//
-//   void updateSheet(List<List<String>> newData) {
-//     _addToHistory(_cloneSheet(newData));
-//     setState(() {
-//       sheetData = _cloneSheet(newData);
-//     });
-//   }
-//
-//   List<List<String>> _cloneSheet(List<List<String>> original) {
-//     return original.map((row) => List<String>.from(row)).toList();
-//   }
-//
-//   Future<void> _saveSheet() async {
-//     final prefs = await SharedPreferences.getInstance();
-//     final encoded = jsonEncode(sheetData);
-//     await prefs.setString(sheetKey, encoded); // Save using unique sheetKey
-//     ScaffoldMessenger.of(context).showSnackBar(
-//       const SnackBar(content: Text("Sheet saved successfully! ✅")),
-//     );
-//   }
-//
-//   Future<void> _saveToFile() async {
-//     final status = await Permission.storage.request();
-//     if (status.isGranted) {
-//       final dir = await getExternalStorageDirectory();
-//
-//       // 🔑 Use unique filename per sheet
-//       final basicfileName = "$sheetKey.json"; // sheetKey like "attendance", "expenses"
-//       final filePath = "${dir!.path}/$basicfileName";
-//
-//       final file = File(filePath);
-//       await file.writeAsString(jsonEncode(sheetData));
-//
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text("File saved: $basicfileName 📄")),
-//       );
-//     }
-//   }
-//
-//   void addRow() {
-//     final newData = _cloneSheet(sheetData);
-//     newData.add(List.generate(sheetData[0].length, (_) => ''));
-//     updateSheet(newData);
-//   }
-//
-//   void addColumn() {
-//     final newData = _cloneSheet(sheetData);
-//     newData[0].add("New Column");
-//     for (int i = 1; i < newData.length; i++) {
-//       newData[i].add("");
-//     }
-//     updateSheet(newData);
-//   }
-//
-//   void deleteRow() {
-//     if (selectedRow != null && selectedRow! < sheetData.length) {
-//       final newData = _cloneSheet(sheetData);
-//       newData.removeAt(selectedRow!);
-//       selectedRow = null;
-//       updateSheet(newData);
-//     }
-//   }
-//
-//   void deleteColumn() {
-//     if (selectedCol != null && selectedCol! < sheetData[0].length) {
-//       final newData = _cloneSheet(sheetData);
-//       for (var row in newData) {
-//         row.removeAt(selectedCol!);
-//       }
-//       selectedCol = null;
-//       updateSheet(newData);
-//     }
-//   }
-//
-//   void updateCell(int row, int col, String value) {
-//     final newData = _cloneSheet(sheetData);
-//     newData[row][col] = value;
-//     updateSheet(newData);
-//   }
-//
-//   String getColumnLabel(int index) {
-//     String label = '';
-//     while (index >= 0) {
-//       label = String.fromCharCode((index % 26) + 65) + label;
-//       index = (index ~/ 26) - 1;
-//     }
-//     return label;
-//   }
-//
-//   String get selectedRangeText {
-//     if (selectedStart == null || selectedEnd == null) return "\t No range selected";
-//     final startLabel = getColumnLabel(selectedStart!.dx.toInt()) + (selectedStart!.dy.toInt() + 1).toString();
-//     final endLabel = getColumnLabel(selectedEnd!.dx.toInt()) + (selectedEnd!.dy.toInt() + 1).toString();
-//     return "\t Selected Range: $startLabel to $endLabel";
-//   }
-//
-//   bool isCellInSelection(int row, int col) {
-//     if (selectedStart == null || selectedEnd == null) return false;
-//     int startRow = selectedStart!.dy.toInt();
-//     int endRow = selectedEnd!.dy.toInt();
-//     int startCol = selectedStart!.dx.toInt();
-//     int endCol = selectedEnd!.dx.toInt();
-//     if (startRow > endRow) {
-//       final temp = startRow;
-//       startRow = endRow;
-//       endRow = temp;
-//     }
-//     if (startCol > endCol) {
-//       final temp = startCol;
-//       startCol = endCol;
-//       endCol = temp;
-//     }
-//     return row >= startRow && row <= endRow && col >= startCol && col <= endCol;
-//   }
-//
-//
-//   List<List<String>> getSelectedRangeData() {
-//     if (selectedStart == null || selectedEnd == null) return [];
-//     int startRow = selectedStart!.dy.toInt();
-//     int endRow = selectedEnd!.dy.toInt();
-//     int startCol = selectedStart!.dx.toInt();
-//     int endCol = selectedEnd!.dx.toInt();
-//     if (startRow > endRow) {
-//       final temp = startRow;
-//       startRow = endRow;
-//       endRow = temp;
-//     }
-//     if (startCol > endCol) {
-//       final temp = startCol;
-//       startCol = endCol;
-//       endCol = temp;
-//     }
-//     return sheetData.sublist(startRow, endRow + 1).map((row) => row.sublist(startCol, endCol + 1)).toList();
-//   }
-//
-//   void showGraph() {
-//     final selectedData = getSelectedRangeData();
-//     if (selectedData.isEmpty) {
-//       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a range first")));
-//       return;
-//     }
-//
-//     showModalBottomSheet(
-//       context: context,
-//       builder: (_) => SizedBox(
-//         height: 300,
-//         child: Column(
-//           children: [
-//             ListTile(title: const Text("Pie Chart"), onTap: () => _showChart("pie", selectedData)),
-//             ListTile(title: const Text("Bar Chart"), onTap: () => _showChart("bar", selectedData)),
-//             ListTile(title: const Text("Line Chart"), onTap: () => _showChart("line", selectedData)),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-//
-//   void _showChart(String type, List<List<String>> chartData) {
-//     Navigator.pop(context);
-//     showDialog(
-//       context: context,
-//       builder: (_) => AlertDialog(
-//         title: Text("$type Chart Representation"),
-//         content: SizedBox(
-//           height: 300,
-//           width: 300,
-//           child: _buildChart(type, chartData),
-//         ),
-//         actions: [
-//           // TextButton(
-//           //   onPressed: () => Navigator.pop(context),
-//           //   child: const Text("Close"),
-//           // ),
-//         ],
-//       ),
-//     );
-//   }
-//
-//   Widget _buildChart(String type, List<List<String>> chartData) {
-//     try {
-//       if (chartData.isEmpty || chartData[0].isEmpty) {
-//         return const Center(child: Text("No data available for chart"));
-//       }
-//
-//       List<double> values = [];
-//       for (int i = 0; i < chartData[0].length; i++) {
-//         if (chartData.length > 1) {
-//           values.add(double.tryParse(chartData[1][i]) ?? 0);
-//         } else {
-//           values.add(double.tryParse(chartData[0][i]) ?? 0);
-//         }
-//       }
-//
-//       List<String> labels = [];
-//       for (int i = 0; i < chartData[0].length; i++) {
-//         labels.add(chartData[0][i].isEmpty ? getColumnLabel(i) : chartData[0][i]);
-//       }
-//
-//       switch (type) {
-//         case "pie":
-//           return PieChart(
-//             PieChartData(
-//               sections: List.generate(
-//                 values.length,
-//                     (i) => PieChartSectionData(
-//                   value: values[i],
-//                   title: labels[i],
-//                   radius: 20,
-//                   color: Colors.primaries[i % Colors.primaries.length],
-//                 ),
-//               ),
-//             ),
-//           );
-//         case "bar":
-//           return BarChart(
-//             BarChartData(
-//               barGroups: List.generate(
-//                 values.length,
-//                     (i) => BarChartGroupData(
-//                   x: i,
-//                   barRods: [
-//                     BarChartRodData(
-//                       toY: values[i],
-//                       color: Colors.primaries[i % Colors.primaries.length],
-//                       width: 16,
-//                     )
-//                   ],
-//                 ),
-//               ),
-//               titlesData: FlTitlesData(
-//                 bottomTitles: AxisTitles(
-//                   sideTitles: SideTitles(
-//                     showTitles: true,
-//                     getTitlesWidget: (value, meta) => Padding(
-//                       padding: const EdgeInsets.only(top: 4.0),
-//                       child: Text(
-//                         labels[value.toInt()],
-//                         style: const TextStyle(fontSize: 10),
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//             ),
-//           );
-//         case "line":
-//         default:
-//           return LineChart(
-//             LineChartData(
-//               lineBarsData: [
-//                 LineChartBarData(
-//                   spots: List.generate(
-//                     values.length,
-//                         (i) => FlSpot(i.toDouble(), values[i]),
-//                   ),
-//                   isCurved: true,
-//                   color: Colors.blue,
-//                   dotData: const FlDotData(show: true),
-//                   belowBarData: BarAreaData(show: true),
-//                 )
-//               ],
-//               titlesData: FlTitlesData(
-//                 bottomTitles: AxisTitles(
-//                   sideTitles: SideTitles(
-//                     showTitles: true,
-//                     getTitlesWidget: (value, meta) => Padding(
-//                       padding: const EdgeInsets.only(top: 4.0),
-//                       child: Text(
-//                         labels[value.toInt()],
-//                         style: const TextStyle(fontSize: 10),
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//             ),
-//           );
-//       }
-//     } catch (e) {
-//       return Center(child: Text("Error creating chart: $e"));
-//     }
-//   }
-//
-//   void _search(String query) {
-//     if (query.isEmpty) {
-//       setState(() {
-//         searchResults.clear();
-//         currentSearchIndex = -1;
-//       });
-//       return;
-//     }
-//
-//     List<Offset> results = [];
-//     for (int row = 0; row < sheetData.length; row++) {
-//       for (int col = 0; col < sheetData[row].length; col++) {
-//         if (sheetData[row][col].toLowerCase().contains(query.toLowerCase())) {
-//           results.add(Offset(col.toDouble(), row.toDouble()));
-//         }
-//       }
-//     }
-//
-//     setState(() {
-//       searchResults = results;
-//       currentSearchIndex = results.isNotEmpty ? 0 : -1;
-//     });
-//   }
-//
-//   void _navigateToSearchResult(int index) {
-//     if (index < 0 || index >= searchResults.length) return;
-//
-//     setState(() {
-//       currentSearchIndex = index;
-//       selectedStart = searchResults[index];
-//       selectedEnd = searchResults[index];
-//     });
-//   }
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     int rows = sheetData.length;
-//     int columns = sheetData[0].length;
-//
-//     return SafeArea(
-//       child: Scaffold(
-//         appBar: AppBar(
-//           leading: IconButton(onPressed: (){
-//             Navigator.pop(context);
-//           }, icon: Icon(Icons.arrow_back),color: Colors.white,),
-//           elevation: 0,
-//           backgroundColor: Colors.green,
-//           centerTitle: true,
-//           actions: [IconButton(onPressed: (){
-//             setState(() {
-//               isclicked = !isclicked;
-//               if(!isclicked){
-//                 searchController.clear();
-//               }
-//             });
-//           }, icon: Icon(Icons.search,color: Colors.white,))],
-//           title: isclicked? Container(
-//             height: 60,
-//             decoration: BoxDecoration(borderRadius: BorderRadius.circular(35),color: Colors.white),
-//             child: Row(
-//               children: [
-//                 Expanded(
-//                   child: TextField(
-//                     controller: searchController,
-//                     decoration: InputDecoration(
-//                       hintText: 'Search...',
-//                       prefixIcon: const Icon(Icons.search),
-//                       // suffixIcon: searchController.text.isNotEmpty
-//                       //     ? IconButton(
-//                       //   icon: const Icon(Icons.clear),
-//                       //   onPressed: () {
-//                       //     searchController.clear();
-//                       //     _search('');
-//                       //   },
-//                       // )
-//                       //     : null,
-//                       border: OutlineInputBorder(
-//                         borderRadius: BorderRadius.circular(8.0),
-//                       ),
-//                     ),
-//                     onChanged: _search,
-//                   ),
-//                 ),
-//                 if (searchResults.isNotEmpty)
-//                   Padding(
-//                     padding: const EdgeInsets.only(left: 0),
-//                     child: Text(
-//                       '${currentSearchIndex + 1}/${searchResults.length}',
-//                       style: const TextStyle(fontSize: 16),
-//                     ),
-//                   ),
-//                 if (searchResults.isNotEmpty)
-//                   IconButton(
-//                     icon: const Icon(Icons.arrow_upward),
-//                     onPressed: () => _navigateToSearchResult((currentSearchIndex - 1) % searchResults.length),
-//                   ),
-//                 if (searchResults.isNotEmpty)
-//                   IconButton(
-//                     icon: const Icon(Icons.arrow_downward),
-//                     onPressed: () => _navigateToSearchResult((currentSearchIndex + 1) % searchResults.length),
-//                   ),
-//               ],
-//             ),
-//           )
-//               : Text("Cost Sheet" , style: TextStyle(fontSize: 26,color: Colors.white, fontWeight: FontWeight.bold),
-//           ),// Increased height to accommodate two rows
-//         ),
-//         body:  SafeArea(
-//           child: Column(
-//             children: [
-//               // Action buttons container below AppBar
-//               Container(
-//                 color: Colors.green,
-//                 padding: const EdgeInsets.symmetric(vertical: 0),
-//                 child: Column(
-//                   children: [
-//                     // First row of buttons
-//                     SingleChildScrollView(
-//                       scrollDirection: Axis.horizontal,
-//                       child: Row(
-//                         mainAxisAlignment: MainAxisAlignment.center,
-//                         children: <Widget>[
-//                           if (widget.isAdmin && editMode) ...[
-//                             IconButton(icon: const Icon(Icons.add_box), tooltip: "Add Row", onPressed: addRow,color: Colors.white,),
-//                             IconButton(icon: const Icon(Icons.view_column), tooltip: "Add Column", onPressed: addColumn,color: Colors.white,),
-//                             IconButton(icon: const Icon(Icons.delete_sweep), tooltip: "Delete Row", onPressed: deleteRow,color: Colors.white,),
-//                             IconButton(icon: const Icon(Icons.delete), tooltip: "Delete Column", onPressed: deleteColumn,color: Colors.white,),
-//                             IconButton(icon: const Icon(Icons.save), tooltip: "Save Sheet", onPressed: _saveSheet,color: Colors.white,),
-//                             IconButton(
-//                               icon: const Icon(Icons.undo),
-//                               tooltip: "Undo",
-//                               onPressed: canUndo ? undo : null,
-//                               color: canUndo ? Colors.white : Colors.white.withOpacity(0.5),
-//                             ),
-//                             IconButton(
-//                               icon: const Icon(Icons.redo),
-//                               tooltip: "Redo",
-//                               onPressed: canRedo ? redo : null,
-//                               color: canRedo ? Colors.white : Colors.white.withOpacity(0.5),
-//                             ),
-//                             IconButton(icon: const Icon(Icons.file_copy), tooltip: "Save as File", onPressed: _saveToFile,color: Colors.white,),
-//                           ],
-//                           Text( selectedRangeText , style: TextStyle(fontSize: 19,color: Colors.white),),
-//                           IconButton(
-//                             onPressed: () => setState(() {
-//                               selectedStart = null;
-//                               selectedEnd = null;
-//                             }),
-//                             icon: const Icon(Icons.clear, color: Colors.white),
-//                             tooltip: "Clear Selection",
-//                           ),
-//                           IconButton(icon: const Icon(Icons.bar_chart), tooltip: "Show Graph", onPressed: showGraph,color: Colors.white,),
-//
-//                         ],
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//               ),
-//               Expanded(
-//                 child: GestureDetector(
-//                   onScaleStart: (details) {
-//                     // Handle scale start if needed
-//                   },
-//                   child: InteractiveViewer(
-//                     panEnabled: false, // Enables drag
-//                     scaleEnabled: true, // Enables pinch zoom
-//                     minScale: 1.0,
-//                     maxScale: 7.0,
-//                     boundaryMargin: const EdgeInsets.all(20),
-//                     child:Transform(
-//                       transform: _matrix,
-//                       child: SingleChildScrollView(
-//                         scrollDirection: Axis.horizontal,
-//                         child: SingleChildScrollView(
-//                           scrollDirection: Axis.vertical,
-//                           child: Center(
-//                             child: Padding(
-//                               padding: const EdgeInsets.all(8.0),
-//                               child: Table(
-//                                 defaultColumnWidth: IntrinsicColumnWidth(),
-//                                 border: TableBorder.all(color: Colors.black),
-//                                 children: [
-//                                   TableRow(children: [
-//                                     const SizedBox(),
-//                                     ...List.generate(columns, (col) {
-//                                       return GestureDetector(
-//                                         onTap: () => setState(() {
-//                                           selectedCol = col;
-//                                           selectedStart = Offset(col.toDouble(), 0);
-//                                           selectedEnd = Offset(col.toDouble(), rows.toDouble() - 1);
-//                                         }),
-//                                         onLongPress: () => setState(() {
-//                                           selectedCol = col;
-//                                           selectedStart = Offset(col.toDouble(), 0);
-//                                           selectedEnd = Offset(col.toDouble(), rows.toDouble() - 1);
-//                                         }),
-//                                         child: Container(
-//                                           color: Colors.grey[300],
-//                                           padding: const EdgeInsets.all(8),
-//                                           alignment: Alignment.center,
-//                                           child: Text(getColumnLabel(col), style: const TextStyle(fontWeight: FontWeight.bold)),
-//                                         ),
-//                                       );
-//                                     })
-//                                   ]),
-//                                   ...List.generate(rows, (row) {
-//                                     return TableRow(children: [
-//                                       GestureDetector(
-//                                         onTap: () => setState(() {
-//                                           selectedRow = row;
-//                                           selectedStart = Offset(0, row.toDouble());
-//                                           selectedEnd = Offset(columns.toDouble() - 1, row.toDouble());
-//                                         }),
-//                                         onLongPress: () => setState(() {
-//                                           selectedRow = row;
-//                                           selectedStart = Offset(0, row.toDouble());
-//                                           selectedEnd = Offset(columns.toDouble() - 1, row.toDouble());
-//                                         }),
-//                                         child: Container(
-//                                           color: Colors.grey[300],
-//                                           padding: const EdgeInsets.all(8),
-//                                           alignment: Alignment.center,
-//                                           child: Text((row + 1).toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
-//                                         ),
-//                                       ),
-//                                       ...List.generate(columns, (col) {
-//                                         bool isSearchResult = searchResults.contains(Offset(col.toDouble(), row.toDouble()));
-//                                         bool isCurrentSearchResult = currentSearchIndex != -1 &&
-//                                             searchResults[currentSearchIndex] == Offset(col.toDouble(), row.toDouble());
-//
-//                                         return GestureDetector(
-//                                           onTap: () {
-//                                             if (selectedStart == null) {
-//                                               setState(() {
-//                                                 selectedStart = Offset(col.toDouble(), row.toDouble());
-//                                                 selectedEnd = Offset(col.toDouble(), row.toDouble());
-//                                               });
-//                                             } else {
-//                                               setState(() {
-//                                                 selectedEnd = Offset(col.toDouble(), row.toDouble());
-//                                               });
-//                                             }
-//                                           },
-//                                           onLongPressStart: (details) {
-//                                             setState(() {
-//                                               selectedStart = Offset(col.toDouble(), row.toDouble());
-//                                               selectedEnd = Offset(col.toDouble(), row.toDouble());
-//                                             });
-//                                           },
-//                                           onLongPressMoveUpdate: (details) {
-//                                             final localPosition = details.localPosition;
-//                                             final row = (localPosition.dy / 50).floor();
-//                                             final col = (localPosition.dx / 100).floor();
-//                                             if (col >= 0 && col < columns && row >= 0 && row < rows) {
-//                                               setState(() {
-//                                                 selectedEnd = Offset(col.toDouble(), row.toDouble());
-//                                               });
-//                                             }
-//                                           },
-//                                           child: Container(
-//                                             color: isCellInSelection(row, col)
-//                                                 ? Colors.blue.withOpacity(0.3)
-//                                                 : isCurrentSearchResult
-//                                                 ? Colors.yellow
-//                                                 : isSearchResult
-//                                                 ? Colors.yellow.withOpacity(0.5)
-//                                                 : Colors.transparent,
-//                                             child: Padding(
-//                                               padding: const EdgeInsets.all(4),
-//                                               child: widget.isAdmin && editMode
-//                                                   ? TextFormField(
-//                                                 initialValue: sheetData[row][col],
-//                                                 textAlign: TextAlign.center,
-//                                                 decoration: const InputDecoration(isDense: true, border: InputBorder.none),
-//                                                 onChanged: (val) => updateCell(row, col, val),
-//                                               )
-//                                                   : Center(child: Text(sheetData[row][col])),
-//                                             ),
-//                                           ),
-//                                         );
-//                                       }),
-//                                     ]);
-//                                   })
-//                                 ],
-//                               ),
-//                             ),
-//                           ),
-//                         ),
-//                       ),
-//                     ),
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ),
-//         floatingActionButton: widget.isAdmin
-//             ? FloatingActionButton(
-//           onPressed: () => setState(() => editMode = !editMode),
-//           child: Icon(editMode ? Icons.lock_open : Icons.lock),
-//           tooltip: "Toggle Edit Mode",
-//         )
-//             : null,
-//       ),
-//     );
-//   }
-// }
-//
-//
-//
+// ─────────────────────────────────────────────
+// FULL-SCREEN IMAGE VIEWER
+// ─────────────────────────────────────────────
+
+class _ImageViewPage extends StatelessWidget {
+  final String imagePath;
+  final String title;
+  final String cellLabel;
+
+  const _ImageViewPage({
+    required this.imagePath,
+    required this.title,
+    required this.cellLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        foregroundColor: Colors.white,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: const TextStyle(fontSize: 14)),
+            if (cellLabel.isNotEmpty)
+              Text(cellLabel,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.white70)),
+          ],
+        ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.share),
+            tooltip: 'Share',
+            onPressed: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                    content: Text(
+                        'Add share_plus package to enable sharing')),
+              );
+            },
+          ),
+        ],
+      ),
+      body: InteractiveViewer(
+        minScale: 0.5,
+        maxScale: 5.0,
+        child: Center(
+          child: Image.file(
+            File(imagePath),
+            fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.broken_image,
+                      color: Colors.white54, size: 80),
+                  SizedBox(height: 12),
+                  Text('Image not found',
+                      style: TextStyle(color: Colors.white54)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
